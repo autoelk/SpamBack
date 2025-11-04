@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spamback"
+version = "0.1.0"
+description = "iMessage utilities (read, watch, send, contacts)"
+authors = [{name = "autoelk"}]
+readme = "README.md"
+requires-python = ">=3.9"
+keywords = ["imessage", "messages", "macos", "sqlite"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: MacOS",
+]
+
+[project.scripts]
+spamback = "spamback.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["spamback*"]

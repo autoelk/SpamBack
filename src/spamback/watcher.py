@@ -2,6 +2,8 @@ import sqlite3
 import os
 import time
 from datetime import datetime
+from .spam_filter import is_spam
+from .sender import send_imessage
 
 DB_PATH = os.path.expanduser("~/Library/Messages/chat.db")
 POLL_INTERVAL = 2.0
@@ -29,7 +31,7 @@ def fetch_new(conn, since):
     c = conn.cursor()
     c.execute(
         """
-        SELECT message.ROWID, message.text, message.date, handle.id
+        SELECT message.ROWID, message.text, message.date, handle.id, COALESCE(message.service, '') as service
         FROM message
         LEFT JOIN handle ON message.handle_id = handle.ROWID
         WHERE message.ROWID > ? AND message.text IS NOT NULL AND message.is_from_me = 0
@@ -54,7 +56,6 @@ def main():
             try:
                 new = fetch_new(conn, last)
             except sqlite3.DatabaseError:
-                # if we get a database error, try reopening the connection
                 try:
                     conn.close()
                 except Exception:
@@ -63,8 +64,20 @@ def main():
                 conn = open_conn()
                 continue
 
-            for rid, text, date, sender in new:
-                print(f"[{ts_to_str(date)}] {sender or 'Unknown'}: {text}")
+            for rid, text, date, sender, service in new:
+                transport = (service or "").strip().lower()
+                print(
+                    f"[{ts_to_str(date)}] {sender or 'Unknown'} ({service or 'unknown'}): {text}"
+                )
+                if is_spam(text):
+                    print(
+                        f"Spam detected from {sender}. Sending auto-reply through {transport}."
+                    )
+                    reply_message = "Your message was detected as spam."
+                    if sender:
+                        send_imessage(sender, reply_message, transport=transport)
+                    else:
+                        print("No sender info available; cannot send reply.")
                 last = max(last, rid)
 
             time.sleep(POLL_INTERVAL)
