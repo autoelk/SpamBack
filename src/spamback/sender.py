@@ -33,13 +33,14 @@ end run
 """
 
 
-def send_imessage(phone_number: str, message: str, transport: str = "imessage"):
+def send_imessage(phone_number: str, message: str, transport: str = "imessage", fallback: bool = True):
     """Send a message via Messages.app.
 
     Args:
         phone_number: Phone number or email (use +1... format for best results)
         message: Text to send
-        transport: 'imessage' or 'sms' (default: 'sms')
+        transport: 'imessage' or 'sms' (default: 'imessage')
+        fallback: If True, try SMS if iMessage fails (default: True)
     """
     phone_number = (phone_number or "").strip()
     message = (message or "").strip()
@@ -69,21 +70,38 @@ def send_imessage(phone_number: str, message: str, transport: str = "imessage"):
             if out.startswith("SENT_VIA:"):
                 via = out.split(":", 1)[1]
                 print(f'Sent "{message}" to {phone_number} via {via}')
+                return True
             elif out.startswith("ERROR:"):
-                print(
-                    "Failed to send message: "
-                    + out
-                    + "\nTip: To send SMS to Android, enable Text Message Forwarding in iPhone Settings > Messages."
-                )
+                error_msg = out
+                print(f"Failed to send message via {t}: {error_msg}")
+                
+                # Try fallback if enabled and we tried iMessage first
+                if fallback and t == "imessage":
+                    print("Attempting to send via SMS as fallback...")
+                    return send_imessage(phone_number, message, transport="sms", fallback=False)
+                elif t == "sms":
+                    print(
+                        "Tip: To send SMS to Android, enable Text Message Forwarding in iPhone Settings > Messages."
+                    )
+                return False
             else:
                 print(f"Send result: {out}")
+                return True
         else:
             err = (result.stderr or "").strip()
             print(f"Failed to send message (osascript exit {result.returncode}): {err}")
+            
+            # Try fallback if enabled and we tried iMessage first
+            if fallback and t == "imessage":
+                print("Attempting to send via SMS as fallback...")
+                return send_imessage(phone_number, message, transport="sms", fallback=False)
+            return False
     except FileNotFoundError:
         print("Error: 'osascript' not found. This only works on macOS.")
+        return False
     except Exception as e:
         print(f"Error sending message: {e}")
+        return False
 
 
 if __name__ == "__main__":

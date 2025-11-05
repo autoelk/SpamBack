@@ -71,11 +71,12 @@ def main():
                 )
                 if is_spam(text):
                     print(
-                        f"Spam detected from {sender}. Sending auto-reply through {transport}."
+                        f"Spam detected from {sender}. Attempting to send auto-reply."
                     )
                     reply_message = "Your message was detected as spam."
                     if sender:
-                        send_imessage(sender, reply_message, transport=transport)
+                        # Try iMessage first, then fall back to SMS
+                        send_imessage(sender, reply_message, transport="imessage")
                     else:
                         print("No sender info available; cannot send reply.")
                 last = max(last, rid)
