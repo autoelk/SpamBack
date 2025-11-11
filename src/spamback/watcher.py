@@ -3,7 +3,7 @@ import os
 import time
 from datetime import datetime
 from .spam_filter import is_spam
-from .sender import send_imessage
+from .sender import send_message
 
 DB_PATH = os.path.expanduser("~/Library/Messages/chat.db")
 POLL_INTERVAL = 2.0
@@ -71,12 +71,11 @@ def main():
                 )
                 if is_spam(text):
                     print(
-                        f"Spam detected from {sender}. Attempting to send auto-reply."
+                        f"Spam detected from {sender}. Sending auto-reply through {transport}."
                     )
                     reply_message = "Your message was detected as spam."
                     if sender:
-                        # Try iMessage first, then fall back to SMS
-                        send_imessage(sender, reply_message, transport="imessage")
+                        send_message(sender, reply_message, transport=transport)
                     else:
                         print("No sender info available; cannot send reply.")
                 last = max(last, rid)

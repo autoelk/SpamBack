@@ -33,29 +33,28 @@ end run
 """
 
 
-def send_imessage(phone_number: str, message: str, transport: str = "imessage", fallback: bool = True):
+def send_message(phone_number: str, message: str, transport: str = "imessage") -> bool:
     """Send a message via Messages.app.
 
     Args:
         phone_number: Phone number or email (use +1... format for best results)
         message: Text to send
         transport: 'imessage' or 'sms' (default: 'imessage')
-        fallback: If True, try SMS if iMessage fails (default: True)
     """
+
+    # Clean inputs
     phone_number = (phone_number or "").strip()
     message = (message or "").strip()
+    transport = transport.strip().lower()
 
     if not phone_number or not message:
-        print("Error: phone_number and message are required")
-        return
+        raise ValueError("Error: phone_number and message are required")
+    if transport not in {"imessage", "sms", "rcs"}:
+        raise ValueError("Invalid transport type")
 
     try:
-        t = transport.strip().lower()
-        if t not in {"imessage", "sms"}:
-            raise ValueError("Invalid transport type")
-
         script = APPLE_SCRIPT_SEND_IMESSAGE
-        if t == "sms":
+        if transport == "sms" or transport == "rcs":
             script = APPLE_SCRIPT_SEND_SMS
 
         result = subprocess.run(
@@ -67,35 +66,19 @@ def send_imessage(phone_number: str, message: str, transport: str = "imessage", 
 
         if result.returncode == 0:
             out = (result.stdout or "").strip()
-            if out.startswith("SENT_VIA:"):
+            if out.startswith("ERROR:"):
+                error_msg = out
+                print(f"Failed to send message via {transport}: {error_msg}")
+                return False
+            elif out.startswith("SENT_VIA:"):
                 via = out.split(":", 1)[1]
                 print(f'Sent "{message}" to {phone_number} via {via}')
                 return True
-            elif out.startswith("ERROR:"):
-                error_msg = out
-                print(f"Failed to send message via {t}: {error_msg}")
-                
-                # Try fallback if enabled and we tried iMessage first
-                if fallback and t == "imessage":
-                    print("Attempting to send via SMS as fallback...")
-                    return send_imessage(phone_number, message, transport="sms", fallback=False)
-                elif t == "sms":
-                    print(
-                        "Tip: To send SMS to Android, enable Text Message Forwarding in iPhone Settings > Messages."
-                    )
-                return False
             else:
                 print(f"Send result: {out}")
                 return True
         else:
-            err = (result.stderr or "").strip()
-            print(f"Failed to send message (osascript exit {result.returncode}): {err}")
-            
-            # Try fallback if enabled and we tried iMessage first
-            if fallback and t == "imessage":
-                print("Attempting to send via SMS as fallback...")
-                return send_imessage(phone_number, message, transport="sms", fallback=False)
-            return False
+            raise RuntimeError(f"(osascript exit {result.returncode}): {result.stderr}")
     except FileNotFoundError:
         print("Error: 'osascript' not found. This only works on macOS.")
         return False
@@ -108,6 +91,6 @@ if __name__ == "__main__":
     if len(sys.argv) == 3:
         recipient = sys.argv[1]
         message = sys.argv[2]
-        send_imessage(recipient, message)
+        send_message(recipient, message, transport="imessage")
     else:
-        print("Usage: python send_imessage.py <phone_number> <message>")
+        print("Usage: python sender.py <phone_number> <message>")
