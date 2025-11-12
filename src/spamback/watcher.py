@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import time
+from google import genai
 from datetime import datetime
 from .spam_filter import is_spam
 from .sender import send_message
@@ -43,6 +44,9 @@ def fetch_new(conn, since):
 
 
 def main():
+    # you have to set a GEMINI_API_KEY env var or this crashes
+    client = genai.Client()
+
     if not os.path.exists(DB_PATH):
         print(f"DB not found: {DB_PATH}")
         return
@@ -73,7 +77,13 @@ def main():
                     print(
                         f"Spam detected from {sender}. Sending auto-reply through {transport}."
                     )
-                    reply_message = "Your message was detected as spam."
+                    response = client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=f"You are pretending to answer messages from a spammer. " \
+                        "Output a short 1-2 sentence reply that wastes the scammer's " \
+                        "time in response to this message: {text}",
+                    )
+                    reply_message = response.text
                     if sender:
                         send_message(sender, reply_message, transport=transport)
                     else:
