@@ -5,6 +5,7 @@ from google import genai
 from datetime import datetime
 from .spam_filter import is_spam
 from .sender import send_message
+from dotenv import load_dotenv
 
 DB_PATH = os.path.expanduser("~/Library/Messages/chat.db")
 POLL_INTERVAL = 2.0
@@ -44,8 +45,8 @@ def fetch_new(conn, since):
 
 
 def main():
-    # you have to set a GEMINI_API_KEY env var or this crashes
-    client = genai.Client()
+    load_dotenv()
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
     if not os.path.exists(DB_PATH):
         print(f"DB not found: {DB_PATH}")
@@ -79,8 +80,8 @@ def main():
                     )
                     response = client.models.generate_content(
                         model="gemini-2.5-flash",
-                        contents=f"You are pretending to answer messages from a spammer. " \
-                        "Output a short 1-2 sentence reply that wastes the scammer's " \
+                        contents=f"You are pretending to answer messages from a spammer. "
+                        "Output a short 1-2 sentence reply that wastes the scammer's "
                         "time in response to this message: {text}",
                     )
                     reply_message = response.text
