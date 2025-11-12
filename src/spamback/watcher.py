@@ -84,11 +84,10 @@ def main():
                         "Output a short 1-2 sentence reply that wastes the scammer's "
                         "time in response to this message: {text}",
                     )
-                    reply_message = response.text
-                    if sender:
-                        send_message(sender, reply_message, transport=transport)
+                    if sender and response.text:
+                        send_message(sender, response.text, transport=transport)
                     else:
-                        print("No sender info available; cannot send reply.")
+                        print("No sender or message available, cannot send reply.")
                 last = max(last, rid)
 
             time.sleep(POLL_INTERVAL)
