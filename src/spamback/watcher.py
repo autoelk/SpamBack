@@ -81,8 +81,9 @@ def main():
                     response = client.models.generate_content(
                         model="gemini-2.5-flash",
                         contents=f"You are pretending to answer messages from a spammer. "
-                        "Output a short 1-2 sentence reply that wastes the scammer's "
-                        "time in response to this message: {text}",
+                        "Output a short 1-2 sentence reply that engages with the scammer " \
+                        "as if you were a regular person responding "
+                        "in response to this message: {text}",
                     )
                     if sender and response.text:
                         send_message(sender, response.text, transport=transport)
