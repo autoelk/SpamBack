@@ -9,7 +9,6 @@ OPTIONS = {
         "CFBundleShortVersionString": "0.1.0",
         "NSAppleEventsUsageDescription": "SpamBack needs to send Apple Events to control Messages and Contacts.",
         "NSContactsUsageDescription": "SpamBack may read Contacts (via Apple Events) to match senders.",
-        # Removed LSBackgroundOnly to show GUI window
     },
 }
 
