@@ -534,32 +534,6 @@ if __name__ == "__main__":
     gui = create_gui()
     gui.set_status("Watching for messages...", running=True)
     
-    # Add some test messages
-    gui.add_message(
-        sender="+1234567890",
-        text="Congratulations! You've won a free iPhone! Click here to claim.",
-        timestamp="2024-01-15 10:30:00",
-        is_from_me=False,
-        is_spam=True,
-        is_spammer=True,
-    )
-    
-    gui.add_message(
-        sender="+1234567890",
-        text="Oh wow, that's amazing! How do I claim my prize?",
-        timestamp="2024-01-15 10:30:15",
-        is_from_me=True,
-        is_spam=False,
-    )
-    
-    gui.add_message(
-        sender="+0987654321",
-        text="Hey, just checking in!",
-        timestamp="2024-01-15 09:00:00",
-        is_from_me=False,
-        is_spam=False,
-    )
-    
     gui.update_stats(spammer_count=1, reply_count=1)
     
     gui.run()
