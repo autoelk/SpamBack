@@ -19,4 +19,8 @@ To build the .app file, use:
 rm -rf build dist && pyinstaller ./SpamBack.spec
 ```
 
-Add `--terminal` to run in console mode.
+To run the app directly from source, use:
+
+```
+python3 -m spamback
+```
