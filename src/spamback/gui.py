@@ -528,7 +528,7 @@ class SpamBackGUI:
         )
 
     def _open_settings_dialog(self):
-        """Open Settings screen (currently hosts the API key input)."""
+        """Open Settings screen (hosts API key and preferences)."""
         dlg = tk.Toplevel(self.root)
         dlg.title("Settings")
         dlg.configure(bg="#1e1e1e")
@@ -539,6 +539,37 @@ class SpamBackGUI:
         container = tk.Frame(dlg, bg="#1e1e1e", padx=24, pady=20)
         container.pack(fill="both", expand=True)
 
+        # Preferences section
+        tk.Label(
+            container,
+            text="Preferences",
+            bg="#1e1e1e",
+            fg="#ffffff",
+            font=("SF Pro", 14, "bold"),
+            anchor="w",
+        ).pack(anchor="w")
+
+        # Whitelist contacts toggle
+        toggle_frame = tk.Frame(container, bg="#1e1e1e")
+        toggle_frame.pack(fill="x", pady=(8, 16))
+
+        tk.Label(
+            toggle_frame,
+            text="Whitelist numbers in Contacts",
+            bg="#1e1e1e",
+            fg="#ffffff",
+            font=("SF Pro", 13),
+        ).pack(side="left")
+
+        whitelist_var = tk.BooleanVar(value=self._load_whitelist_contacts())
+        chk = ttk.Checkbutton(toggle_frame, variable=whitelist_var)
+        chk.pack(side="right")
+
+        # Separator
+        sep = tk.Frame(container, bg="#3a3a3c", height=1)
+        sep.pack(fill="x", pady=(0, 16))
+
+        # API Key section
         tk.Label(
             container,
             text="API Key",
@@ -598,6 +629,7 @@ class SpamBackGUI:
             key = key_var.get().strip()
             if key:
                 self._save_api_key(key)
+            self._save_whitelist_contacts(bool(whitelist_var.get()))
             dlg.destroy()
 
         def cancel():
@@ -851,6 +883,35 @@ class SpamBackGUI:
                 except Exception:
                     pass
             payload["GEMINI_API_KEY"] = key
+            self.config_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _load_whitelist_contacts(self) -> bool:
+        """Load whitelist_contacts setting (default True)."""
+        if self.config_path.exists():
+            try:
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+                val = data.get("whitelist_contacts")
+                if isinstance(val, bool):
+                    return val
+            except Exception:
+                pass
+        return True
+
+    def _save_whitelist_contacts(self, enabled: bool):
+        """Persist whitelist_contacts setting."""
+        try:
+            self.config_dir.mkdir(parents=True, exist_ok=True)
+            payload = {}
+            if self.config_path.exists():
+                try:
+                    existing = json.loads(self.config_path.read_text(encoding="utf-8"))
+                    if isinstance(existing, dict):
+                        payload.update(existing)
+                except Exception:
+                    pass
+            payload["whitelist_contacts"] = bool(enabled)
             self.config_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         except Exception:
             pass

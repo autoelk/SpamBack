@@ -8,6 +8,7 @@ from google.genai import types
 from datetime import datetime
 from .spam_filter import is_spam
 from .sender import send_message
+from .contacts import is_contact
 from typing import Optional, Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -65,6 +66,15 @@ def init_client_from_config(payload: dict):
         return genai.Client(api_key=str(api_key))
     except Exception:
         return None
+
+
+def get_whitelist_contacts() -> bool:
+    """Return whether contacts should be whitelisted (default True)."""
+    payload = load_config_payload()
+    val = payload.get("whitelist_contacts")
+    if isinstance(val, bool):
+        return val
+    return True
 
 
 def ts_to_str(apple_ts):
@@ -273,13 +283,17 @@ def _handle_spam_reply(sender: str, transport: str, text: str, client, spammer: 
 
 def _process_record(record, client):
     """Process a single DB record and return the latest ROWID consumed."""
+    from .contacts import is_contact
+
     rid, text, date, sender, service = record
     transport = (service or "").strip().lower()
     timestamp_str = ts_to_str(date)
     print(f"[{timestamp_str}] {sender or 'Unknown'} ({service or 'unknown'}): {text}")
 
-    spammer = is_spammer(sender)
-    is_spam_msg = is_spam(text)
+    whitelist_contacts = get_whitelist_contacts()
+    contact_match, contact_name = is_contact(sender)
+    spammer = False if (whitelist_contacts and contact_match) else is_spammer(sender)
+    is_spam_msg = False if (whitelist_contacts and contact_match) else is_spam(text)
 
     if is_spam_msg and not spammer:
         if add_spammer(sender):
@@ -296,6 +310,14 @@ def _process_record(record, client):
         service=transport,
     )
     _notify_gui_stats()
+
+    if whitelist_contacts and contact_match:
+        print(
+            f"Sender {sender or 'Unknown'} is in Contacts"
+            + (f" as {contact_name}" if contact_name else "")
+            + "; skipping spam handling."
+        )
+        return rid
 
     if spammer or is_spam_msg:
         print(f"Spam detected from {sender}. Sending auto-reply through {transport}.")
