@@ -265,28 +265,6 @@ class SpamBackGUI:
         )
         header_label.pack(side="left", padx=12, pady=15)
 
-        api_btn = tk.Label(
-            sidebar_header,
-            text="Set API Key",
-            bg="#0b84fe",
-            fg="#ffffff",
-            font=("SF Pro", 12, "bold"),
-            padx=10,
-            pady=6,
-            cursor="hand2",
-        )
-
-        def api_enter(_):
-            api_btn.configure(bg="#0a74dd")
-
-        def api_leave(_):
-            api_btn.configure(bg="#0b84fe")
-
-        api_btn.bind("<Enter>", api_enter)
-        api_btn.bind("<Leave>", api_leave)
-        api_btn.bind("<Button-1>", lambda _: self._open_api_key_dialog())
-        api_btn.pack(side="right", padx=12, pady=12)
-
         # Status indicator
         status_frame = tk.Frame(self.sidebar, bg="#1e1e1e")
         status_frame.pack(fill="x", padx=12, pady=8)
@@ -359,7 +337,30 @@ class SpamBackGUI:
             fg="#ffffff",
             font=("SF Pro", 15, "bold"),
         )
-        self.message_header_label.pack(pady=18)
+        self.message_header_label.pack(side="left", padx=12, pady=18)
+
+        # Settings (gear) button on the right
+        self.settings_btn = tk.Label(
+            self.message_header,
+            text="⚙",
+            bg="#2c2c2e",
+            fg="#ffffff",
+            font=("SF Pro", 16, "bold"),
+            padx=10,
+            pady=6,
+            cursor="hand2",
+        )
+
+        def _gear_enter(_):
+            self.settings_btn.configure(bg="#3a3a3c")
+
+        def _gear_leave(_):
+            self.settings_btn.configure(bg="#2c2c2e")
+
+        self.settings_btn.bind("<Enter>", _gear_enter)
+        self.settings_btn.bind("<Leave>", _gear_leave)
+        self.settings_btn.bind("<Button-1>", lambda _: self._open_settings_dialog())
+        self.settings_btn.pack(side="right", padx=12, pady=12)
 
         # Message list container
         message_container = tk.Frame(self.content, bg="#1e1e1e")
@@ -526,10 +527,10 @@ class SpamBackGUI:
             self.root.quit,
         )
 
-    def _open_api_key_dialog(self):
-        """Open a modal to capture and persist the Gemini API key."""
+    def _open_settings_dialog(self):
+        """Open Settings screen (currently hosts the API key input)."""
         dlg = tk.Toplevel(self.root)
-        dlg.title("Gemini API Key")
+        dlg.title("Settings")
         dlg.configure(bg="#1e1e1e")
         dlg.resizable(False, False)
         dlg.transient(self.root)
@@ -540,7 +541,7 @@ class SpamBackGUI:
 
         tk.Label(
             container,
-            text="Enter your Gemini API key",
+            text="API Key",
             bg="#1e1e1e",
             fg="#ffffff",
             font=("SF Pro", 14, "bold"),

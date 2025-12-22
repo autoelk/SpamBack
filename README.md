@@ -22,5 +22,5 @@ rm -rf build dist && pyinstaller ./SpamBack.spec
 To run the app directly from source, use:
 
 ```
-python3 -m spamback
+python3 -m spamback --gui
 ```
