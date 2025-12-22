@@ -16,6 +16,10 @@ if TYPE_CHECKING:
 DB_PATH = os.path.expanduser("~/Library/Messages/chat.db")
 POLL_INTERVAL = 2.0
 
+# Global GUI reference for callbacks
+_gui: Optional["SpamBackGUI"] = None
+_reply_count: int = 0
+
 
 def get_config_path() -> Path:
     """Get the config file path in app support directory."""
@@ -23,9 +27,44 @@ def get_config_path() -> Path:
     return config_dir / "config.json"
 
 
-# Global GUI reference for callbacks
-_gui: Optional["SpamBackGUI"] = None
-_reply_count: int = 0
+def load_config_payload() -> dict:
+    """Load config JSON as dict, or return empty dict on failure."""
+    config_path = get_config_path()
+    if config_path.exists():
+        try:
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return {}
+
+
+def ensure_config_baseline() -> dict:
+    """Ensure config file exists with required keys; return payload."""
+    config_path = get_config_path()
+    payload = load_config_payload()
+    if not isinstance(payload.get("spammers"), list):
+        payload["spammers"] = []
+
+    try:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+    return payload
+
+
+def init_client_from_config(payload: dict):
+    """Return a genai client if API key exists; otherwise None."""
+    api_key = payload.get("GEMINI_API_KEY")
+    if not api_key:
+        return None
+    try:
+        return genai.Client(api_key=str(api_key))
+    except Exception:
+        return None
 
 
 def ts_to_str(apple_ts):
@@ -187,47 +226,97 @@ def _notify_gui_stats():
         _gui.queue_stats(spammer_count, _reply_count)
 
 
+def _handle_spam_reply(sender: str, transport: str, text: str, client, spammer: bool):
+    """Generate and send spam reply; update GUI and counters."""
+    global _reply_count
+
+    if client is None:
+        print("Cannot send reply: API key not configured")
+        _notify_gui_status("Spam detected (no API key for reply)", running=True)
+        return
+
+    _notify_gui_status(f"Generating reply to {sender}...", running=True)
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            config=types.GenerateContentConfig(
+                system_instruction="You are pretending to answer messages from a spammer. "
+                "Output a short 1-2 sentence reply that engages with the scammer "
+                "as if you were a regular person responding in response to their messages:",
+            ),
+            contents=text,
+        )
+        if sender and response.text:
+            send_message(sender, response.text, transport=transport)
+            _reply_count += 1
+
+            reply_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            _notify_gui_message(
+                sender=sender,
+                text=response.text,
+                timestamp=reply_timestamp,
+                is_from_me=True,
+                is_spam_msg=False,
+                is_spammer_status=spammer,
+                service=transport,
+            )
+            _notify_gui_stats()
+            _notify_gui_status("Watching for messages...", running=True)
+        else:
+            print("No sender or message available, cannot send reply.")
+            _notify_gui_status("Failed to send reply", running=True)
+    except Exception as e:
+        print(f"Error generating/sending reply: {e}")
+        _notify_gui_status(f"Error: {str(e)}", running=True)
+
+
+def _process_record(record, client):
+    """Process a single DB record and return the latest ROWID consumed."""
+    rid, text, date, sender, service = record
+    transport = (service or "").strip().lower()
+    timestamp_str = ts_to_str(date)
+    print(f"[{timestamp_str}] {sender or 'Unknown'} ({service or 'unknown'}): {text}")
+
+    spammer = is_spammer(sender)
+    is_spam_msg = is_spam(text)
+
+    if is_spam_msg and not spammer:
+        if add_spammer(sender):
+            print(f"Added {sender} to spammers list.")
+            spammer = True
+
+    _notify_gui_message(
+        sender=sender or "Unknown",
+        text=text,
+        timestamp=timestamp_str,
+        is_from_me=False,
+        is_spam_msg=is_spam_msg,
+        is_spammer_status=spammer,
+        service=transport,
+    )
+    _notify_gui_stats()
+
+    if spammer or is_spam_msg:
+        print(f"Spam detected from {sender}. Sending auto-reply through {transport}.")
+        _handle_spam_reply(sender, transport, text, client, spammer)
+
+    return rid
+
+
 def main(gui: Optional["SpamBackGUI"] = None):
     global _gui, _reply_count
     _gui = gui
     _reply_count = 0
 
     try:
-        # Read API key from app-support config.json only
-        api_key = ""
-        config_path = get_config_path()
-        if config_path.exists():
-            try:
-                cfg = json.loads(config_path.read_text(encoding="utf-8"))
-                if isinstance(cfg, dict) and cfg.get("GEMINI_API_KEY"):
-                    api_key = str(cfg["GEMINI_API_KEY"])
-                    client = genai.Client(api_key=api_key)
-            except Exception:
-                pass
+        payload = ensure_config_baseline()
+        client = init_client_from_config(payload)
 
         if not os.path.exists(DB_PATH):
             print(f"DB not found: {DB_PATH}")
             _notify_gui_status("Error: Messages database not found", running=False)
             return
-
-        # Ensure app-support config.json exists and has a spammers list
-        config_path = get_config_path()
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {}
-        if config_path.exists():
-            try:
-                existing = json.loads(config_path.read_text(encoding="utf-8"))
-                if isinstance(existing, dict):
-                    payload.update(existing)
-            except Exception:
-                pass
-        if not isinstance(payload.get("spammers"), list):
-            payload["spammers"] = []
-        # Write back only if we created or normalized the spammers key
-        try:
-            config_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        except Exception:
-            pass
     except Exception as e:
         print(f"Initialization error: {e}")
         _notify_gui_status(f"Error: {str(e)}", running=False)
@@ -253,84 +342,8 @@ def main(gui: Optional["SpamBackGUI"] = None):
                 _notify_gui_status("Reconnecting to database...", running=True)
                 continue
 
-            for rid, text, date, sender, service in new:
-                transport = (service or "").strip().lower()
-                timestamp_str = ts_to_str(date)
-                print(
-                    f"[{timestamp_str}] {sender or 'Unknown'} ({service or 'unknown'}): {text}"
-                )
-                normalized = normalize_sender(sender)
-                spammer = is_spammer(sender)
-                spam = is_spam(text)
-
-                if spam and not spammer:
-                    if add_spammer(sender):
-                        print(f"Added {sender} to spammers list.")
-                        spammer = True
-                    # if spammer already in list, add_spammer returns False but this theoretically shouldn't happen
-
-                # Notify GUI about the incoming message
-                _notify_gui_message(
-                    sender=sender or "Unknown",
-                    text=text,
-                    timestamp=timestamp_str,
-                    is_from_me=False,
-                    is_spam_msg=spam,
-                    is_spammer_status=spammer,
-                    service=transport,
-                )
-                _notify_gui_stats()
-
-                if spammer or spam:
-                    print(
-                        f"Spam detected from {sender}. Sending auto-reply through {transport}."
-                    )
-
-                    if client is None:
-                        print("Cannot send reply: API key not configured")
-                        _notify_gui_status(
-                            "Spam detected (no API key for reply)", running=True
-                        )
-                        continue
-
-                    _notify_gui_status(f"Generating reply to {sender}...", running=True)
-
-                    try:
-                        response = client.models.generate_content(
-                            model="gemini-2.5-flash",
-                            config=types.GenerateContentConfig(
-                                system_instruction="You are pretending to answer messages from a spammer. "
-                                "Output a short 1-2 sentence reply that engages with the scammer "
-                                "as if you were a regular person responding in response to their messages:",
-                            ),
-                            contents=text,
-                        )
-                        if sender and response.text:
-                            send_message(sender, response.text, transport=transport)
-                            _reply_count += 1
-
-                            # Notify GUI about the sent reply
-                            reply_timestamp = datetime.now().strftime(
-                                "%Y-%m-%d %H:%M:%S"
-                            )
-                            _notify_gui_message(
-                                sender=sender,
-                                text=response.text,
-                                timestamp=reply_timestamp,
-                                is_from_me=True,
-                                is_spam_msg=False,
-                                is_spammer_status=spammer,
-                                service=transport,
-                            )
-                            _notify_gui_stats()
-                            _notify_gui_status("Watching for messages...", running=True)
-                        else:
-                            print("No sender or message available, cannot send reply.")
-                            _notify_gui_status("Failed to send reply", running=True)
-                    except Exception as e:
-                        print(f"Error generating/sending reply: {e}")
-                        _notify_gui_status(f"Error: {str(e)}", running=True)
-
+            for record in new:
+                rid = _process_record(record, client)
                 last = max(last, rid)
 
             time.sleep(POLL_INTERVAL)
