@@ -47,6 +47,14 @@ def ensure_config_baseline() -> dict:
     payload = load_config_payload()
     if not isinstance(payload.get("spammers"), list):
         payload["spammers"] = []
+    # Default history window for contextual prompts
+    try:
+        hw = int(payload.get("history_window", 12))
+        if hw <= 0:
+            hw = 12
+        payload["history_window"] = hw
+    except Exception:
+        payload["history_window"] = 12
 
     try:
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,11 +112,17 @@ def fetch_new(conn, since):
     c = conn.cursor()
     c.execute(
         """
-        SELECT message.ROWID, message.text, message.date, handle.id, COALESCE(message.service, '') as service
-        FROM message
-        LEFT JOIN handle ON message.handle_id = handle.ROWID
-        WHERE message.ROWID > ? AND message.text IS NOT NULL AND message.is_from_me = 0
-        ORDER BY message.date ASC
+        SELECT m.ROWID,
+               m.text,
+               m.date,
+               h.id AS sender,
+               COALESCE(m.service, '') AS service,
+               cmj.chat_id AS chat_id
+        FROM message m
+        LEFT JOIN handle h ON m.handle_id = h.ROWID
+        LEFT JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+        WHERE m.ROWID > ? AND m.text IS NOT NULL AND m.is_from_me = 0
+        ORDER BY m.date ASC
         """,
         (since,),
     )
@@ -236,7 +250,126 @@ def _notify_gui_stats():
         _gui.queue_stats(spammer_count, _reply_count)
 
 
-def _handle_spam_reply(sender: str, transport: str, text: str, client, spammer: bool):
+def get_history_window() -> int:
+    """Read history_window from config; default to 12."""
+    try:
+        payload = load_config_payload()
+        hw = int(payload.get("history_window", 12))
+        return hw if hw > 0 else 12
+    except Exception:
+        return 12
+
+
+def fetch_thread_history(
+    conn, chat_id: Optional[int], sender: Optional[str], limit: int = 12
+):
+    """
+    Fetch last `limit` messages for a thread as chronological history.
+
+    Prefer chat-based lookup via chat_message_join; fallback to handle.id for 1:1.
+    Returns a list of dicts: {"is_from_me": bool, "sender": str|None, "text": str, "date": int, "service": str}
+    """
+    c = conn.cursor()
+    rows = []
+    try:
+        if chat_id is not None:
+            c.execute(
+                """
+                SELECT m.is_from_me,
+                       h.id AS sender,
+                       m.text,
+                       m.date,
+                       COALESCE(m.service, '') AS service
+                FROM chat_message_join cmj
+                INNER JOIN message m ON cmj.message_id = m.ROWID
+                LEFT JOIN handle h ON m.handle_id = h.ROWID
+                WHERE cmj.chat_id = ? AND m.text IS NOT NULL
+                ORDER BY m.date DESC
+                LIMIT ?
+                """,
+                (chat_id, limit),
+            )
+            rows = c.fetchall()
+        elif sender:
+            c.execute(
+                """
+                SELECT m.is_from_me,
+                       h.id AS sender,
+                       m.text,
+                       m.date,
+                       COALESCE(m.service, '') AS service
+                FROM message m
+                LEFT JOIN handle h ON m.handle_id = h.ROWID
+                WHERE h.id = ? AND m.text IS NOT NULL
+                ORDER BY m.date DESC
+                LIMIT ?
+                """,
+                (sender, limit),
+            )
+            rows = c.fetchall()
+    except sqlite3.DatabaseError:
+        return []
+
+    # Reverse to chronological order (oldest -> newest)
+    history = [
+        {
+            "is_from_me": bool(r[0]),
+            "sender": r[1],
+            "text": r[2],
+            "date": r[3],
+            "service": r[4],
+        }
+        for r in reversed(rows)
+        if r and r[2]
+    ]
+    return history
+
+
+def build_reply_prompt(history: list, latest_text: str) -> str:
+    """
+    Build a compact transcript followed by a clear reply instruction.
+
+    Example:
+    Them: Hi there
+    Me: Hey
+    Them: Are you available?
+
+    Instruction: Reply as Me in 1–2 sentences, consistent with context.
+    """
+    lines = []
+    for h in history:
+        label = "Me" if h.get("is_from_me") else "Them"
+        sender = h.get("sender") or "Unknown"
+        # For group chats, include sender name on 'Them'
+        if label == "Them" and sender:
+            line = f"Them ({sender}): {h.get('text','').strip()}"
+        else:
+            line = f"{label}: {h.get('text','').strip()}"
+        lines.append(line)
+
+    # Ensure the latest incoming text is present at the end (deduplicate if necessary)
+    if latest_text and (
+        not lines or latest_text.strip() != history[-1].get("text", "").strip()
+    ):
+        lines.append(f"Them: {latest_text.strip()}")
+
+    instruction = (
+        "\n\n"  # spacer
+        "Reply as Me in 1–2 sentences, staying consistent with the conversation. "
+        "Avoid personal details. Keep the tone natural and continue the thread."
+    )
+    return "\n".join(lines) + instruction
+
+
+def _handle_spam_reply(
+    sender: str,
+    transport: str,
+    text: str,
+    client,
+    spammer: bool,
+    conn,
+    chat_id: Optional[int],
+):
     """Generate and send spam reply; update GUI and counters."""
     global _reply_count
 
@@ -248,6 +381,11 @@ def _handle_spam_reply(sender: str, transport: str, text: str, client, spammer: 
     _notify_gui_status(f"Generating reply to {sender}...", running=True)
 
     try:
+        # Build contextual prompt
+        history_window = get_history_window()
+        history = fetch_thread_history(conn, chat_id, sender, limit=history_window)
+        prompt = build_reply_prompt(history, latest_text=text)
+
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             config=types.GenerateContentConfig(
@@ -255,7 +393,7 @@ def _handle_spam_reply(sender: str, transport: str, text: str, client, spammer: 
                 "Output a short 1-2 sentence reply that engages with the scammer "
                 "as if you were a regular person responding in response to their messages:",
             ),
-            contents=text,
+            contents=prompt,
         )
         if sender and response.text:
             send_message(sender, response.text, transport=transport)
@@ -281,11 +419,11 @@ def _handle_spam_reply(sender: str, transport: str, text: str, client, spammer: 
         _notify_gui_status(f"Error: {str(e)}", running=True)
 
 
-def _process_record(record, client):
+def _process_record(record, client, conn):
     """Process a single DB record and return the latest ROWID consumed."""
     from .contacts import is_contact
 
-    rid, text, date, sender, service = record
+    rid, text, date, sender, service, chat_id = record
     transport = (service or "").strip().lower()
     timestamp_str = ts_to_str(date)
     print(f"[{timestamp_str}] {sender or 'Unknown'} ({service or 'unknown'}): {text}")
@@ -321,7 +459,7 @@ def _process_record(record, client):
 
     if spammer or is_spam_msg:
         print(f"Spam detected from {sender}. Sending auto-reply through {transport}.")
-        _handle_spam_reply(sender, transport, text, client, spammer)
+        _handle_spam_reply(sender, transport, text, client, spammer, conn, chat_id)
 
     return rid
 
@@ -365,7 +503,7 @@ def main(gui: Optional["SpamBackGUI"] = None):
                 continue
 
             for record in new:
-                rid = _process_record(record, client)
+                rid = _process_record(record, client, conn)
                 last = max(last, rid)
 
             time.sleep(POLL_INTERVAL)
