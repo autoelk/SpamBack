@@ -1,33 +1,14 @@
-"""Contact lookup helpers using macOS Contacts via AppleScript or native framework."""
+"""Contact lookup helpers using macOS Contacts via native framework."""
 
 import subprocess
 from typing import Tuple
 from Contacts import CNContactStore, CNPhoneNumber, CNContactFetchRequest
 import Contacts
-
-
-def normalize_for_contact_lookup(sender: str) -> str:
-    """Normalize sender for contact lookup (phone number or email)."""
-    if not sender:
-        return ""
-    sender = sender.strip()
-    if "@" in sender:
-        # Email - case-insensitive
-        return sender.lower()
-    # Phone number - strip formatting
-    normalized = sender.lower()
-    if normalized.startswith("+"):
-        normalized = normalized[1:]  # Keep the 1, just remove the +
-    normalized = (
-        normalized.replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
-    )
-    return normalized
+from .utils import normalize_address
 
 
 def is_contact(sender: str) -> Tuple[bool, str]:
     """Return (True, name) if sender is found in Contacts; otherwise (False, "").
-
-    Tries native framework first, falls back to AppleScript.
 
     Args:
         sender: Phone number or email address to check
@@ -38,7 +19,7 @@ def is_contact(sender: str) -> Tuple[bool, str]:
     if not sender:
         return False, ""
 
-    normalized = normalize_for_contact_lookup(sender)
+    normalized = normalize_address(sender)
     if not normalized:
         return False, ""
 
@@ -83,7 +64,7 @@ def _check_contact_native(
                         phone_str = phone_number.stringValue()
 
                         # Normalize both sides and compare
-                        stored_normalized = normalize_for_contact_lookup(phone_str)
+                        stored_normalized = normalize_address(phone_str)
 
                         # Try exact match first
                         if phone_str == original_sender:

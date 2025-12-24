@@ -9,6 +9,7 @@ from datetime import datetime
 from .spam_filter import is_spam
 from .sender import send_message
 from .contacts import is_contact
+from .utils import normalize_address
 from typing import Optional, Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -128,24 +129,6 @@ def fetch_new(conn, since):
     )
     return c.fetchall()
 
-# Normalize a sender (phone number or email) for comparison
-def normalize_sender(sender: str) -> str:
-    if not sender:
-        return ""
-
-    sender = sender.strip().lower()
-
-    if "@" in sender:
-        # Email
-        return sender
-
-    # Phone number
-    if sender.startswith("+"):
-        # Remove leading +1
-        sender = sender[2:]
-    sender = sender.replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
-    return sender
-
 
 def write_json(path: str, data):
     tmp = f"{path}.tmp"
@@ -173,7 +156,7 @@ def load_spammers() -> list[str]:
 
 # Add a sender from the spammers list
 def add_spammer(sender: str):
-    normalized = normalize_sender(sender)
+    normalized = normalize_address(sender)
     if not normalized:
         return False
 
@@ -201,9 +184,10 @@ def add_spammer(sender: str):
     config_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return True
 
+
 # Remove a sender from the spammers list
 def remove_spammer(sender: str):
-    normalized = normalize_sender(sender)
+    normalized = normalize_address(sender)
     if not normalized:
         return False
 
@@ -231,9 +215,10 @@ def remove_spammer(sender: str):
     config_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return True
 
+
 # Check if a sender is in the spammers list
 def is_spammer(sender: str) -> bool:
-    normalized = normalize_sender(sender)
+    normalized = normalize_address(sender)
     if not normalized:
         return False
     spammers = load_spammers()
