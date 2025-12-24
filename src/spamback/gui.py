@@ -626,7 +626,9 @@ class SpamBackGUI:
         entry.focus_set()
 
         # Spammer section
-        from .watcher import load_spammers, remove_spammer, normalize_sender
+        from .watcher import load_spammers, remove_spammer
+        from .utils import normalize_address
+
         tk.Label(
             container,
             text="Spammers",
@@ -704,7 +706,12 @@ class SpamBackGUI:
 
         status_note = tk.StringVar(value="")
         status_label = tk.Label(
-            container, textvariable=status_note, bg="#1e1e1e", fg="#8e8e93", font=("SF Pro", 10), anchor="w"
+            container,
+            textvariable=status_note,
+            bg="#1e1e1e",
+            fg="#8e8e93",
+            font=("SF Pro", 10),
+            anchor="w",
         )
         status_label.pack(fill="x", pady=(0, 10))
 
@@ -724,7 +731,7 @@ class SpamBackGUI:
                         # Clear spammer flag in conversations for this sender
                         for conv in self.conversations.values():
                             try:
-                                if normalize_sender(conv.sender) == norm:
+                                if normalize_address(conv.sender) == norm:
                                     conv.is_spammer = False
                             except Exception:
                                 pass
@@ -732,9 +739,11 @@ class SpamBackGUI:
                     status_note.set(f"Error removing: {e}")
             reload_spammers()
             if removed:
-                status_note.set(f"Removed {removed} spammer{'s' if removed != 1 else ''}.")
+                status_note.set(
+                    f"Removed {removed} spammer{'s' if removed != 1 else ''}."
+                )
                 self.set_status("Spammer removed", running=self.is_running)
-                
+
                 current_spammers = load_spammers()
                 self.update_stats(len(current_spammers), self.reply_count)
             else:
@@ -746,7 +755,6 @@ class SpamBackGUI:
         # Refresh both views
         self._refresh_conversation_list()
         self._refresh_message_view()
-
 
         btn_row = tk.Frame(container, bg="#1e1e1e")
         btn_row.pack(anchor="e")
