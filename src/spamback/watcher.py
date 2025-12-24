@@ -128,9 +128,8 @@ def fetch_new(conn, since):
     )
     return c.fetchall()
 
-
+# Normalize a sender (phone number or email) for comparison
 def normalize_sender(sender: str) -> str:
-    """Normalize a sender (phone number or email) for comparison."""
     if not sender:
         return ""
 
@@ -157,8 +156,8 @@ def write_json(path: str, data):
     os.replace(tmp, path)
 
 
+# Load spammers list from json config
 def load_spammers() -> list[str]:
-    """Load spammers list from app-support config.json."""
     config_path = get_config_path()
     try:
         if config_path.exists():
@@ -172,8 +171,8 @@ def load_spammers() -> list[str]:
         return []
 
 
+# Add a sender from the spammers list
 def add_spammer(sender: str):
-    """Add a sender to the spammers list in app-support config.json."""
     normalized = normalize_sender(sender)
     if not normalized:
         return False
@@ -202,9 +201,38 @@ def add_spammer(sender: str):
     config_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return True
 
+# Remove a sender from the spammers list
+def remove_spammer(sender: str):
+    normalized = normalize_sender(sender)
+    if not normalized:
+        return False
 
+    spammers = load_spammers()
+    if normalized not in spammers:
+        return False
+
+    spammers.remove(normalized)
+
+    # Ensure directory exists
+    config_path = get_config_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Read existing config, update spammers, write back
+    payload = {}
+    if config_path.exists():
+        try:
+            existing = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(existing, dict):
+                payload.update(existing)
+        except Exception:
+            pass
+
+    payload["spammers"] = spammers
+    config_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return True
+
+# Check if a sender is in the spammers list
 def is_spammer(sender: str) -> bool:
-    """Check if a sender is in the spammers list."""
     normalized = normalize_sender(sender)
     if not normalized:
         return False
