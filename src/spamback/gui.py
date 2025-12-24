@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, Callable
+from .contacts import is_contact
 
 
 @dataclass
@@ -759,8 +760,13 @@ class SpamBackGUI:
         sender_key = conversation.sender.lower().strip()
         self.selected_conversation = sender_key
 
-        # Update header
-        title = conversation.display_name
+        # Update header - check if sender is a contact and use their name
+        in_contacts, contact_name = is_contact(conversation.sender)
+        if in_contacts and contact_name:
+            title = contact_name
+        else:
+            title = conversation.display_name
+
         if conversation.is_spammer:
             title += " ⚠️ SPAMMER"
         self.message_header_label.config(text=title)
