@@ -861,7 +861,7 @@ class SpamBackGUI:
 
     def show_spam_confirmation_dialog(self, sender: str, text: str, callback: Callable):
         """Show a dialog asking the user if this is actually spam.
-        
+
         Args:
             sender: The sender's phone number/identifier
             text: The message text
@@ -993,7 +993,6 @@ class SpamBackGUI:
     def run(self):
         """Start the GUI main loop."""
         self.root.mainloop()
-
 
     # ------------------------------------------------------------------
     # Config helpers

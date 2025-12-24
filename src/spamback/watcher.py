@@ -358,7 +358,7 @@ def _show_spam_confirmation_dialog(sender: str, text: str, callback: Callable):
 
 def _handle_spam_confirmation(sender: str, choice: str):
     """Handle user's response to spam confirmation dialog.
-    
+
     Args:
         sender: The sender's phone number
         choice: 'yes' (add to spam), 'maybe' (do nothing), 'no' (add to whitelist)
@@ -552,12 +552,20 @@ def _process_record(record, client, conn):
 
     whitelist_contacts = get_whitelist_contacts()
     contact_match, contact_name = is_contact(sender)
-    
+
     # Check if already whitelisted
     already_whitelisted = is_whitelisted(sender)
-    
-    spammer = False if (whitelist_contacts and contact_match) or already_whitelisted else is_spammer(sender)
-    is_spam_msg = False if (whitelist_contacts and contact_match) or already_whitelisted else is_spam(text)
+
+    spammer = (
+        False
+        if (whitelist_contacts and contact_match) or already_whitelisted
+        else is_spammer(sender)
+    )
+    is_spam_msg = (
+        False
+        if (whitelist_contacts and contact_match) or already_whitelisted
+        else is_spam(text)
+    )
 
     # Track if this is a new spam detection (not already in spammer list)
     is_new_spam = is_spam_msg and not spammer and not already_whitelisted
@@ -580,7 +588,7 @@ def _process_record(record, client, conn):
             + "; skipping spam handling."
         )
         return rid
-    
+
     if already_whitelisted:
         print(f"Sender {sender or 'Unknown'} is whitelisted; skipping spam handling.")
         return rid
