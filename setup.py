@@ -10,6 +10,10 @@ setup(
         "transformers",
         "torch",
         "numpy",
+        "pillow",
         "google-genai",
+        "pyobjc-core",
+        "pyobjc-framework-Cocoa",
+        "pyobjc-framework-Contacts",
     ],
 )

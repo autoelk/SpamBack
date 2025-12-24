@@ -11,13 +11,22 @@ a = Analysis(
         'torch',
         'numpy',
         'PIL',
+        'Contacts',
+        'Cocoa',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludedimports=['tkinter', 'test', 'tests'],
     noarchive=False,
-    collect_submodules=['torch', 'transformers', 'google.genai', 'google.auth'],
+    collect_submodules=[
+        'torch',
+        'transformers',
+        'google.genai',
+        'google.auth',
+        'Contacts',
+        'Cocoa',
+    ],
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 exe = EXE(
