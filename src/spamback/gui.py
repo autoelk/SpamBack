@@ -859,9 +859,141 @@ class SpamBackGUI:
             }
         )
 
+    def show_spam_confirmation_dialog(self, sender: str, text: str, callback: Callable):
+        """Show a dialog asking the user if this is actually spam.
+        
+        Args:
+            sender: The sender's phone number/identifier
+            text: The message text
+            callback: Function to call with the user's response ('yes', 'maybe', 'no')
+        """
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Confirm Spam Detection")
+        dlg.configure(bg="#1e1e1e")
+        dlg.resizable(False, False)
+        dlg.transient(self.root)
+        dlg.grab_set()
+        dlg.geometry("500x350")
+
+        # Center dialog on screen
+        dlg.update_idletasks()
+        width = dlg.winfo_width()
+        height = dlg.winfo_height()
+        x = (dlg.winfo_screenwidth() // 2) - (width // 2)
+        y = (dlg.winfo_screenheight() // 2) - (height // 2)
+        dlg.geometry(f"+{x}+{y}")
+
+        container = tk.Frame(dlg, bg="#1e1e1e", padx=20, pady=20)
+        container.pack(fill="both", expand=True)
+
+        # Question
+        question = tk.Label(
+            container,
+            text="Is this actually spam?",
+            bg="#1e1e1e",
+            fg="#ffffff",
+            font=("SF Pro", 16, "bold"),
+            anchor="w",
+        )
+        question.pack(anchor="w", pady=(0, 12))
+
+        # Message preview frame
+        preview_frame = tk.Frame(container, bg="#3a3a3c", bd=0)
+        preview_frame.pack(fill="both", expand=True, pady=(0, 16))
+
+        # Sender info
+        sender_label = tk.Label(
+            preview_frame,
+            text=f"From: {sender}",
+            bg="#3a3a3c",
+            fg="#8e8e93",
+            font=("SF Pro", 11),
+            anchor="w",
+            wraplength=420,
+            justify="left",
+            padx=12,
+            pady=6,
+        )
+        sender_label.pack(anchor="w", fill="x")
+
+        # Message text
+        text_label = tk.Label(
+            preview_frame,
+            text=text,
+            bg="#3a3a3c",
+            fg="#ffffff",
+            font=("SF Pro", 12),
+            anchor="nw",
+            wraplength=420,
+            justify="left",
+            padx=12,
+            pady=6,
+        )
+        text_label.pack(anchor="nw", fill="both", expand=True, padx=12, pady=6)
+
+        # Buttons frame
+        buttons_frame = tk.Frame(container, bg="#1e1e1e")
+        buttons_frame.pack(fill="x", pady=(0, 0))
+
+        def make_button(parent, text, bg, hover_bg, command):
+            btn = tk.Label(
+                parent,
+                text=text,
+                bg=bg,
+                fg="#ffffff",
+                padx=14,
+                pady=8,
+                font=("SF Pro", 12, "bold"),
+                cursor="hand2",
+                bd=0,
+                relief="flat",
+                highlightthickness=0,
+            )
+
+            def on_enter(_):
+                btn.configure(bg=hover_bg)
+
+            def on_leave(_):
+                btn.configure(bg=bg)
+
+            def on_click(_):
+                dlg.destroy()
+                callback(command)
+
+            btn.bind("<Enter>", on_enter)
+            btn.bind("<Leave>", on_leave)
+            btn.bind("<Button-1>", on_click)
+            btn.pack(side="left", padx=4)
+            return btn
+
+        make_button(
+            buttons_frame,
+            "Yes",
+            "#30d158",  # Green
+            "#27a244",
+            "yes",
+        )
+
+        make_button(
+            buttons_frame,
+            "Maybe",
+            "#8e8e93",  # Gray
+            "#636366",
+            "maybe",
+        )
+
+        make_button(
+            buttons_frame,
+            "No",
+            "#0b84fe",  # Blue
+            "#0a74dd",
+            "no",
+        )
+
     def run(self):
         """Start the GUI main loop."""
         self.root.mainloop()
+
 
     # ------------------------------------------------------------------
     # Config helpers

@@ -225,6 +225,92 @@ def is_spammer(sender: str) -> bool:
     return normalized in spammers
 
 
+# Load whitelist from json config
+def load_whitelist() -> list[str]:
+    config_path = get_config_path()
+    try:
+        if config_path.exists():
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and "whitelist" in data:
+                whitelist = data["whitelist"]
+                if isinstance(whitelist, list):
+                    return whitelist
+        return []
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+# Add a sender to the whitelist
+def add_to_whitelist(sender: str):
+    normalized = normalize_address(sender)
+    if not normalized:
+        return False
+
+    whitelist = load_whitelist()
+    if normalized in whitelist:
+        return False
+
+    whitelist.append(normalized)
+
+    # Ensure directory exists
+    config_path = get_config_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Read existing config, update whitelist, write back
+    payload = {}
+    if config_path.exists():
+        try:
+            existing = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(existing, dict):
+                payload.update(existing)
+        except Exception:
+            pass
+
+    payload["whitelist"] = whitelist
+    config_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return True
+
+
+# Remove a sender from the whitelist
+def remove_from_whitelist(sender: str):
+    normalized = normalize_address(sender)
+    if not normalized:
+        return False
+
+    whitelist = load_whitelist()
+    if normalized not in whitelist:
+        return False
+
+    whitelist.remove(normalized)
+
+    # Ensure directory exists
+    config_path = get_config_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Read existing config, update whitelist, write back
+    payload = {}
+    if config_path.exists():
+        try:
+            existing = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(existing, dict):
+                payload.update(existing)
+        except Exception:
+            pass
+
+    payload["whitelist"] = whitelist
+    config_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return True
+
+
+# Check if a sender is in the whitelist
+def is_whitelisted(sender: str) -> bool:
+    normalized = normalize_address(sender)
+    if not normalized:
+        return False
+    whitelist = load_whitelist()
+    return normalized in whitelist
+
+
 def _notify_gui_message(
     sender: str,
     text: str,
@@ -261,6 +347,29 @@ def _notify_gui_stats():
     if _gui is not None:
         spammer_count = len(load_spammers())
         _gui.queue_stats(spammer_count, _reply_count)
+
+
+def _show_spam_confirmation_dialog(sender: str, text: str, callback: Callable):
+    """Request GUI to show spam confirmation dialog."""
+    global _gui
+    if _gui is not None:
+        _gui.show_spam_confirmation_dialog(sender, text, callback)
+
+
+def _handle_spam_confirmation(sender: str, choice: str):
+    """Handle user's response to spam confirmation dialog.
+    
+    Args:
+        sender: The sender's phone number
+        choice: 'yes' (add to spam), 'maybe' (do nothing), 'no' (add to whitelist)
+    """
+    if choice == "yes":
+        if add_spammer(sender):
+            print(f"Added {sender} to spammers list.")
+    elif choice == "no":
+        if add_to_whitelist(sender):
+            print(f"Added {sender} to whitelist.")
+    # 'maybe' does nothing
 
 
 def get_history_window() -> int:
@@ -443,13 +552,15 @@ def _process_record(record, client, conn):
 
     whitelist_contacts = get_whitelist_contacts()
     contact_match, contact_name = is_contact(sender)
-    spammer = False if (whitelist_contacts and contact_match) else is_spammer(sender)
-    is_spam_msg = False if (whitelist_contacts and contact_match) else is_spam(text)
+    
+    # Check if already whitelisted
+    already_whitelisted = is_whitelisted(sender)
+    
+    spammer = False if (whitelist_contacts and contact_match) or already_whitelisted else is_spammer(sender)
+    is_spam_msg = False if (whitelist_contacts and contact_match) or already_whitelisted else is_spam(text)
 
-    if is_spam_msg and not spammer:
-        if add_spammer(sender):
-            print(f"Added {sender} to spammers list.")
-            spammer = True
+    # Track if this is a new spam detection (not already in spammer list)
+    is_new_spam = is_spam_msg and not spammer and not already_whitelisted
 
     _notify_gui_message(
         sender=sender or "Unknown",
@@ -469,6 +580,24 @@ def _process_record(record, client, conn):
             + "; skipping spam handling."
         )
         return rid
+    
+    if already_whitelisted:
+        print(f"Sender {sender or 'Unknown'} is whitelisted; skipping spam handling.")
+        return rid
+
+    # If new spam detected, show confirmation dialog instead of auto-adding
+    if is_new_spam:
+        print(f"New spam detected from {sender}. Requesting user confirmation...")
+        callback = lambda choice: _handle_spam_confirmation(sender, choice)
+        _show_spam_confirmation_dialog(sender, text, callback)
+        # Don't auto-reply yet; wait for user confirmation
+        return rid
+
+    if spammer or is_spam_msg:
+        print(f"Spam detected from {sender}. Sending auto-reply through {transport}.")
+        _handle_spam_reply(sender, transport, text, client, spammer, conn, chat_id)
+
+    return rid
 
     if spammer or is_spam_msg:
         print(f"Spam detected from {sender}. Sending auto-reply through {transport}.")
