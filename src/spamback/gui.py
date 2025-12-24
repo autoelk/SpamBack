@@ -2,6 +2,7 @@
 SpamBack GUI - A Messages-like interface for viewing spam detection and auto-replies.
 """
 
+import re
 import tkinter as tk
 from tkinter import ttk
 import queue
@@ -231,6 +232,7 @@ class SpamBackGUI:
         # Status
         self.status_text = tk.StringVar(value="Initializing...")
         self.is_running = False
+        self.reply_count = 0
 
         # Paths
         self.env_path = Path(__file__).resolve().parent.parent.parent / ".env"
@@ -622,6 +624,129 @@ class SpamBackGUI:
         )
         entry.pack(fill="x", pady=(0, 14))
         entry.focus_set()
+
+        # Spammer section
+        from .watcher import load_spammers, remove_spammer, normalize_sender
+        tk.Label(
+            container,
+            text="Spammers",
+            bg="#1e1e1e",
+            fg="#ffffff",
+            font=("SF Pro", 14, "bold"),
+            anchor="w",
+        ).pack(anchor="w")
+
+        tk.Label(
+            container,
+            text="Remove senders from the spammers list. Removing stops auto-replies to them.",
+            bg="#1e1e1e",
+            fg="#8e8e93",
+            font=("SF Pro", 11),
+            anchor="w",
+        ).pack(anchor="w", pady=(0, 10))
+
+        spam_frame = tk.Frame(container, bg="#1e1e1e")
+        spam_frame.pack(fill="both", expand=False)
+
+        # Listbox + scrollbar
+        spam_scroll = ttk.Scrollbar(spam_frame, orient="vertical")
+        spam_list = tk.Listbox(
+            spam_frame,
+            bg="#2c2c2e",
+            fg="#ffffff",
+            selectmode="extended",
+            yscrollcommand=spam_scroll.set,
+            exportselection=False,
+            width=46,
+            height=8,
+            activestyle="none",
+        )
+        spam_scroll.config(command=spam_list.yview)
+        spam_list.pack(side="left", fill="both", expand=True)
+        spam_scroll.pack(side="right", fill="y")
+
+        # Map listbox index to normalized sender
+        index_to_normalized: dict[int, str] = {}
+
+        def reload_spammers():
+            spam_list.delete(0, tk.END)
+            index_to_normalized.clear()
+            try:
+                spammers = load_spammers()
+            except Exception:
+                spammers = []
+            for i, s in enumerate(spammers):
+                index_to_normalized[i] = s
+                spam_list.insert(tk.END, s)
+
+        reload_spammers()
+
+        # Action buttons row
+        spam_btns = tk.Frame(container, bg="#1e1e1e")
+        spam_btns.pack(anchor="e", pady=(8, 16))
+
+        def make_btn(parent, text, bg, hover_bg, cmd):
+            btn = tk.Label(
+                parent,
+                text=text,
+                bg=bg,
+                fg="#ffffff",
+                padx=14,
+                pady=8,
+                font=("SF Pro", 12, "bold"),
+                cursor="hand2",
+            )
+            btn.bind("<Enter>", lambda _: btn.configure(bg=hover_bg))
+            btn.bind("<Leave>", lambda _: btn.configure(bg=bg))
+            btn.bind("<Button-1>", lambda _: cmd())
+            btn.pack(side="right", padx=(8, 0))
+            return btn
+
+        status_note = tk.StringVar(value="")
+        status_label = tk.Label(
+            container, textvariable=status_note, bg="#1e1e1e", fg="#8e8e93", font=("SF Pro", 10), anchor="w"
+        )
+        status_label.pack(fill="x", pady=(0, 10))
+
+        def remove_selected():
+            sel = list(spam_list.curselection())
+            if not sel:
+                status_note.set("Select one or more sender to remove.")
+                return
+            removed = 0
+            for idx in sel:
+                norm = index_to_normalized.get(idx, "")
+                if not norm:
+                    continue
+                try:
+                    if remove_spammer(norm):
+                        removed += 1
+                        # Clear spammer flag in conversations for this sender
+                        for conv in self.conversations.values():
+                            try:
+                                if normalize_sender(conv.sender) == norm:
+                                    conv.is_spammer = False
+                            except Exception:
+                                pass
+                except Exception as e:
+                    status_note.set(f"Error removing: {e}")
+            reload_spammers()
+            if removed:
+                status_note.set(f"Removed {removed} spammer{'s' if removed != 1 else ''}.")
+                self.set_status("Spammer removed", running=self.is_running)
+                
+                current_spammers = load_spammers()
+                self.update_stats(len(current_spammers), self.reply_count)
+            else:
+                status_note.set("No entries were removed.")
+
+        make_btn(spam_btns, "Refresh", "#3a3a3c", "#2c2c2e", reload_spammers)
+        make_btn(spam_btns, "Remove Selected", "#ff3b30", "#e4352b", remove_selected)
+
+        # Refresh both views
+        self._refresh_conversation_list()
+        self._refresh_message_view()
+
 
         btn_row = tk.Frame(container, bg="#1e1e1e")
         btn_row.pack(anchor="e")

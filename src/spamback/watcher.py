@@ -182,6 +182,7 @@ def add_spammer(sender: str):
 
     payload["spammers"] = spammers
     config_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    _notify_gui_stats()
     return True
 
 
@@ -213,6 +214,9 @@ def remove_spammer(sender: str):
 
     payload["spammers"] = spammers
     config_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    
+    print(f"Removed {sender} from spammers list.")
+    _notify_gui_stats()
     return True
 
 
